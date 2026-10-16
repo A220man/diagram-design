@@ -103,6 +103,21 @@ class ExportSvgStandaloneTests(unittest.TestCase):
         self.assertIn("`stroke=\"currentColor\"` reads `color`", text)
         self.assertIn('`data-motion-item=""`', text)
 
+    def test_arabic_fonts_in_export_import(self) -> None:
+        """Exported RTL SVGs must carry Cairo and Noto Naskh Arabic in the
+        Google Fonts @import so Arabic labels render identically to the
+        reviewed HTML (Greptile feedback PRRC_kwDOSEljpM78OM7a)."""
+        source = ASSETS / "template-rtl.html"
+        svg = self.mod.export_svg_document(source.read_text(encoding="utf-8"), source)
+        # The @import embedded in the SVG must request the Arabic families;
+        # without them, a machine lacking those fonts locally substitutes a
+        # different face and Arabic labels reflow.
+        import_match = re.search(r"@import url\('([^']+)'\)", svg)
+        self.assertIsNotNone(import_match, "exported SVG must contain a Google Fonts @import")
+        import_url = import_match.group(1)
+        self.assertIn("Cairo", import_url, "exported SVG @import omits Cairo")
+        self.assertIn("Noto+Naskh+Arabic", import_url, "exported SVG @import omits Noto Naskh Arabic")
+
     def test_loop_export_carries_scoped_css(self) -> None:
         source = ASSETS / "example-loop.html"
         html = source.read_text(encoding="utf-8")

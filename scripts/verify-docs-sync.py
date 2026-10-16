@@ -1414,6 +1414,7 @@ FONT_LINK_SURFACES = (
     Path("assets/template-dark.html"),
     Path("assets/template-full.html"),
     Path("assets/template-motion.html"),
+    Path("assets/template-rtl.html"),
     Path("references/style-guide.md"),
 )
 # A real css2 copy, as opposed to prose such as `<link href="...fonts.googleapis.com...">`.

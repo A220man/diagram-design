@@ -114,6 +114,7 @@ FONT_SURFACES = (
     "assets/template-dark.html",
     "assets/template-full.html",
     "assets/template-motion.html",
+    "assets/template-rtl.html",
     "references/style-guide.md",
     "references/export.md",
 )
@@ -123,6 +124,7 @@ LINK_SURFACES = (
     "assets/template-dark.html",
     "assets/template-full.html",
     "assets/template-motion.html",
+    "assets/template-rtl.html",
     "references/style-guide.md",
 )
 # Files the ADR 0004 split made carriers of the type-ramp contract: the grid
