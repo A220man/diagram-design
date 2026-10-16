@@ -496,6 +496,15 @@ jobs:
         if: always() && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         id: render
         run: python scripts/lint-render.py --all
+      - name: Verify RTL and Arabic typography
+        if: always()
+        id: rtl
+        run: python scripts/verify-rtl.py --all
+
+      - name: Verify RTL verifier
+        if: always()
+        id: rtl_tests
+        run: python scripts/test-verify-rtl.py
 
       - name: Verify generated icon assets
         if: always()
@@ -581,3 +590,5 @@ jobs:
           echo "| Render Linter Self-Test | ${{ steps.render_selftest.outcome == 'success' && '✅ Passed' || (steps.render_selftest.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Rendered Layout (paint oracle) | ${{ steps.render.outcome == 'success' && '✅ Passed' || (steps.render.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Export Snippet Stalled-Load Fallback | ${{ steps.export_wait.outcome == 'success' && '✅ Passed' || (steps.export_wait.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| RTL and Arabic Typography | ${{ steps.rtl.outcome == 'success' && '✅ Passed' || (steps.rtl.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| RTL Verifier Tests | ${{ steps.rtl_tests.outcome == 'success' && '✅ Passed' || (steps.rtl_tests.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY

@@ -106,6 +106,8 @@
       "python3 scripts/test-verify-beeswarm.py",
       "python3 scripts/verify-skin-polarity.py --all",
       "python3 scripts/test-verify-skin-polarity.py",
+      "python3 scripts/verify-rtl.py --all",
+      "python3 scripts/test-verify-rtl.py",
       "python3 scripts/test-export-wait.py",
       "python3 scripts/test-verify-heatmap.py",
       "python3 scripts/verify-heatmap.py --all",

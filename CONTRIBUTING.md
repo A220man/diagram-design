@@ -97,6 +97,8 @@ Every validation gate below must pass before a PR is ready. They also run automa
 | Beeswarm checker behaves (pass + adversarial cases) | `python3 scripts/test-verify-beeswarm.py` |
 | Every directional tone claim matches the ramp it describes, on every skin | `python3 scripts/verify-skin-polarity.py --all` |
 | Skin-polarity checker behaves (pass + adversarial cases) | `python3 scripts/test-verify-skin-polarity.py` |
+| RTL and Arabic typography contracts (root direction, font coverage, bidi isolation, label-mask height) | `python3 scripts/verify-rtl.py --all` |
+| RTL verifier behaves (pass + adversarial cases, incl. browser anchoring and wide-preset export) | `python3 scripts/test-verify-rtl.py` (browser cases run on the Linux Chromium leg) |
 | Generated icon assets are up to date (`icons.html`, `primitive-icons.md`) | `python3 scripts/build-icons.py` then `git diff --exit-code` on the two generated files |
 
 The semantic-pattern gate also caps `skills/diagram-design/SKILL.md` at 40,000 bytes so the installed skill remains practical to load. If that gate fails, reduce duplication or move detail into a routed reference; do not remove routing vocabulary from frontmatter. SKILL.md is a router: SVG markup and the long form of the connector rules live in `references/primitives-core.md`, and the 4px grid table, per-type complexity budget rows, page layout, and summary cards live in `references/layout-budget.md` (ADR 0004, 2026-09-27 amendment). A new type's budget row goes in `layout-budget.md`, not SKILL.md.
