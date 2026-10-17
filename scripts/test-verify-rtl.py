@@ -131,6 +131,31 @@ VAR_UNDEFINED_SVG = """<!DOCTYPE html>
 </html>
 """
 
+# Adversarial bidi fixtures (maintainer comment-6127048399, "bidi rule"): Latin,
+# digit, and neutral-punctuation content between Arabic must be explicitly
+# isolated. NBSP (U+00A0) does not isolate (issue #254), so NBSP-joined digit
+# runs are rejected alongside the rest.
+BIDI_BAD_DIGITS = VALID_RTL_SVG.replace("مكتب فني", "مكتب 23 05 23.11 فني")
+BIDI_BAD_NBSP_DIGITS = VALID_RTL_SVG.replace("مكتب فني", "مكتب 23\u00a005\u00a023.11 فني")
+BIDI_BAD_ARABIC_BOTH_SIDES = VALID_RTL_SVG.replace("مكتب فني", "مرحبا example مرحبا")
+BIDI_BAD_PARENS = VALID_RTL_SVG.replace("مكتب فني", "مكتب (example) فني")
+BIDI_BAD_QA_QC = VALID_RTL_SVG.replace("مكتب فني", "مكتب QA/QC فني")
+BIDI_GOOD_DIGITS_TSPAN = VALID_RTL_SVG.replace("مكتب فني", 'مرحبا <tspan direction="ltr">23 05 23.11</tspan> مرحبا')
+BIDI_GOOD_DIGITS_LRI = VALID_RTL_SVG.replace("مكتب فني", "مرحبا \u206723 05 23.11\u2069 مرحبا")
+BIDI_GOOD_PARENS_TSPAN = VALID_RTL_SVG.replace("مكتب فني", 'مرحبا <tspan direction="ltr">(example)</tspan> مرحبا')
+HEBREW_RTL_SVG = """<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<body>
+<svg viewBox="0 0 960 600" direction="rtl" role="img" aria-labelledby="t-title t-desc">
+  <title id="t-title">כותרת התרשים</title>
+  <desc id="t-desc">תיאור התרשים בעברית.</desc>
+  <rect width="100%" height="100%" fill="#f5f5f5"/>
+  <text x="864" y="270" text-anchor="start" font-family="'Geist', sans-serif" font-size="14">טכני</text>
+</svg>
+</body>
+</html>
+"""
+
 
 def main() -> int:
     if not VERIFIER.is_file():
@@ -306,6 +331,107 @@ def main() -> int:
         )
     else:
         print("OK: missing input file is reported and exits nonzero")
+
+    # 15. Bidi isolation: mixed Latin/digit content between Arabic must be
+    # explicitly isolated (its own <text>, <tspan direction="ltr">, or LRI/PDI).
+    # The digit/lowercase/parentheses/NBSP cases fail on baseline because the
+    # old check only caught uppercase code identifiers; the new check flags any
+    # unisolated ASCII alnum left after stripping code identifiers and isolated
+    # spans. (Maintainer comment-6127048399, request #1; issue #254.)
+    check_finding(
+        "bidi-digits-inline-rejected",
+        BIDI_BAD_DIGITS,
+        "not bidi-isolated",
+    )
+    check_finding(
+        "bidi-nbsp-joined-digits-rejected",
+        BIDI_BAD_NBSP_DIGITS,
+        "not bidi-isolated",
+    )
+    check_finding(
+        "bidi-lowercase-between-arabic-rejected",
+        BIDI_BAD_ARABIC_BOTH_SIDES,
+        "not bidi-isolated",
+    )
+    check_finding(
+        "bidi-parenthesized-inline-rejected",
+        BIDI_BAD_PARENS,
+        "not bidi-isolated",
+    )
+    check_finding(
+        "bidi-code-identifier-inline-rejected",
+        BIDI_BAD_QA_QC,
+        "mixed Latin code identifier 'QA/QC' inline in Arabic text",
+    )
+    check_clean("bidi-digits-isolated-tspan", BIDI_GOOD_DIGITS_TSPAN)
+    check_clean("bidi-digits-isolated-lri", BIDI_GOOD_DIGITS_LRI)
+    check_clean("bidi-parenthesized-isolated-tspan", BIDI_GOOD_PARENS_TSPAN)
+
+    # 16. Non-Arabic RTL scripts (e.g. Hebrew) are explicitly marked deferred
+    # and non-fatal. The Arabic typography contracts are scoped to Arabic text
+    # nodes, so check() returns no findings for the Hebrew fixture; main() must
+    # still surface a DEFERRED note (so the gap is visible, not silently
+    # passed) and exit 0. On baseline there is no deferred marker and the note
+    # never prints, so this is a genuine failing regression there.
+    # (Maintainer comment-6127048399, request #2: "mark other RTL scripts as
+    # deferred"; earlier changes scoped the checks to has_arabic_text but
+    # emitted no deferred marker for non-Arabic RTL scripts.)
+    with tempfile.TemporaryDirectory() as scratch:
+        hebrew_path = Path(scratch) / "hebrew.html"
+        hebrew_path.write_text(HEBREW_RTL_SVG, encoding="utf-8")
+        hebrew_findings = module.check(hebrew_path)
+        if hebrew_findings:
+            failures.append(
+                "non-arabic-rtl-clean: Hebrew fixture must not trigger Arabic "
+                f"findings; got {hebrew_findings}"
+            )
+        else:
+            print("OK: non-arabic-rtl-clean")
+        old_argv = sys.argv
+        sys.argv = [str(VERIFIER), str(hebrew_path)]
+        captured = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(captured):
+                hebrew_exit = module.main()
+        finally:
+            sys.argv = old_argv
+        hebrew_out = captured.getvalue()
+        if "DEFERRED" not in hebrew_out:
+            failures.append(
+                "non-arabic-rtl-deferred: expected a DEFERRED note in main() "
+                f"output; got {hebrew_out!r}"
+            )
+        else:
+            print("OK: non-arabic-rtl-deferred")
+        if hebrew_exit != 0:
+            failures.append(
+                "non-arabic-rtl-nonfatal: DEFERRED must be non-fatal (exit 0); "
+                f"got exit={hebrew_exit}; out={hebrew_out!r}"
+            )
+        else:
+            print("OK: non-arabic-rtl-nonfatal")
+
+    # 17. Arabic RTL documents must NOT be marked deferred — the Arabic checks
+    # apply and no DEFERRED note appears for a valid Arabic fixture.
+    with tempfile.TemporaryDirectory() as scratch:
+        arabic_path = Path(scratch) / "arabic.html"
+        arabic_path.write_text(VALID_RTL_SVG, encoding="utf-8")
+        old_argv = sys.argv
+        sys.argv = [str(VERIFIER), str(arabic_path)]
+        captured = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(captured):
+                arabic_exit = module.main()
+        finally:
+            sys.argv = old_argv
+        arabic_out = captured.getvalue()
+        if "DEFERRED" in arabic_out or arabic_exit != 0:
+            failures.append(
+                "arabic-not-deferred: Arabic fixture must pass without DEFERRED; "
+                f"exit={arabic_exit}; out={arabic_out!r}"
+            )
+        else:
+            print("OK: arabic-not-deferred")
 
     # 10. Browser layout oracle & wide-preset export checks (requires Playwright)
     try:

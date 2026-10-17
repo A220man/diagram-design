@@ -9,7 +9,7 @@ guidelines in style-guide.md:
 4. Text anchor: Right-inset alignment in RTL uses text-anchor="start", not text-anchor="end".
 5. Invariant viewBox: viewBox is not mirrored or inverted.
 6. Mask height: Label masks for Arabic text are at least 16px tall.
-7. Bidi isolation: Mixed Latin code identifiers are isolated in separate <text> elements.
+7. Bidi isolation: Mixed Latin/digit content (code identifiers, digit runs, neutral punctuation) in Arabic text is isolated in its own <text> or <tspan direction="ltr">, or wrapped in LRI (U+2067)...PDI (U+2069); NBSP (U+00A0) does not isolate.
 
 Typography note: font-size and font-family on Arabic <text> elements are resolved
 through the SVG inheritance chain (ancestor <g>/<svg> presentation attributes and
@@ -51,6 +51,16 @@ G_CLOSE_RE = re.compile(r"</g\s*>", re.IGNORECASE)
 STYLE_RE = re.compile(r"<style[^>]*>(?P<css>.*?)</style>", re.IGNORECASE | re.DOTALL)
 CSS_VAR_DEF_RE = re.compile(r"--font-(sans|serif)\s*:\s*([^;]+);", re.IGNORECASE)
 VAR_USE_RE = re.compile(r"var\(\s*--font-(sans|serif)\s*\)", re.IGNORECASE)
+LRI_PDI_RE = re.compile(r"\u2067.*?\u2069", re.DOTALL)
+TSPAN_LTR_RE = re.compile(
+    r"<tspan\b[^>]*\bdirection\s*=\s*[\"']ltr[\"'][^>]*>.*?</tspan>",
+    re.IGNORECASE | re.DOTALL,
+)
+# Right-to-left scripts other than Arabic (Hebrew, Syriac, N'KO, Samaritan,
+# Mandaic) that the Arabic font-stack, 11px floor, and mask-height contracts
+# do not yet cover and must be explicitly marked as deferred. These blocks do
+# not overlap ARABIC_RE, so an Arabic+Hebrew mix still defers the Hebrew run.
+RTL_OTHER_RE = re.compile(r"[\u0590-\u05FF\u0700-\u074F\u07C0-\u07FF\u0800-\u083F\u0840-\u085F]")
 
 
 def root_direction_is_rtl(source: str) -> bool:
@@ -160,6 +170,50 @@ def _text_ancestors(source: str) -> dict[int, list[str]]:
         ancestors[text_starts[index]] = ([svg_attrs] if svg_attrs else []) + list(stack)
         index += 1
     return ancestors
+
+
+def _stripped_of_isolation(text: str) -> str:
+    """Remove explicitly bidi-isolated spans so the inline-content check judges
+    only content that is still unisolated.
+
+    The RTL rule accepts three isolation forms: an LRI...PDI pair
+    (U+2067...U+2069), a <tspan direction="ltr">...</tspan>, or a whole <text>
+    element on its own line. A standalone <text> is handled by the caller,
+    which only runs this check on Arabic text nodes; the spans below are
+    stripped here so the check can flag anything still inline.
+    """
+    text = LRI_PDI_RE.sub("", text)
+    text = TSPAN_LTR_RE.sub("", text)
+    return text
+
+
+def deferred_for(path: Path) -> list[str]:
+    """Non-fatal deferral notes for RTL documents outside the Arabic scope.
+
+    The Arabic typography contracts (font stack, 11px floor, 16px mask) are
+    Arabic-specific. A document that is RTL but carries a non-Arabic RTL
+    script (Hebrew, Syriac, N'KO, Samaritan, Mandaic) is recognized here and
+    explicitly marked deferred rather than silently passing those checks, so
+    the gap is visible without blocking the file. These notes never fail the
+    run.
+
+    Maintainer comment-6127048399, request #2: "mark other RTL scripts as
+    deferred."
+    """
+    try:
+        source = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    if not root_direction_is_rtl(source):
+        return []
+    if RTL_OTHER_RE.search(source):
+        return [
+            f"{path}: DEFERRED: RTL document uses a non-Arabic RTL script "
+            "(Hebrew, Syriac, N'KO, Samaritan, Mandaic) not covered by the "
+            "Arabic font-stack, 11px floor, or mask-height contracts; support "
+            "for other RTL scripts is deferred."
+        ]
+    return []
 
 
 def check(path: Path) -> list[str]:
@@ -306,6 +360,24 @@ def check(path: Path) -> list[str]:
                         "bidi layout corruption"
                     )
 
+            # Bidi isolation for the remaining mixed content: digit runs,
+            # lowercase Latin, neutral punctuation, and Latin sitting between
+            # Arabic on both sides reorder against the Arabic flow. NBSP
+            # (U+00A0) does not isolate (issue #254), so digit runs joined
+            # with NBSP are rejected alongside the rest. Isolate each run in
+            # its own <text> or <tspan direction="ltr">, or wrap it in LRI
+            # (U+2067) ... PDI (U+2069). Uppercase code identifiers were
+            # reported above; strip them out first to avoid double reporting,
+            # as are the already-isolated spans.
+            unmasked = _stripped_of_isolation(body)
+            unmasked = LATIN_CODE_RE.sub("", unmasked)
+            if re.search(r"[A-Za-z0-9]", unmasked):
+                findings.append(
+                    f"{path}: line {line}: mixed Latin/digit content inline in Arabic "
+                    "text is not bidi-isolated; wrap in LRI/PDI (U+2067/U+2069) or its "
+                    "own <text>/<tspan> with direction='ltr' (NBSP does not isolate)"
+                )
+
     # 4. Mask height contract for Arabic label masks
     # Apply the height floor only to rects that are actual label masks for
     # Arabic text, not chart data marks (legend squares, color-ramp cells) that
@@ -369,6 +441,7 @@ def main() -> int:
         parser.error("pass one or more files, or --all")
 
     findings: list[str] = []
+    deferred: list[str] = []
     checked = 0
     for path in paths:
         if not path.is_file():
@@ -379,11 +452,21 @@ def main() -> int:
             continue
         checked += 1
         findings.extend(check(path))
+        # Non-fatal deferral notes (e.g. non-Arabic RTL scripts) are reported
+        # for visibility but do not fail the run.
+        deferred.extend(deferred_for(path))
 
     for finding in findings:
         print(finding)
+    for note in deferred:
+        print(note)
 
-    print(f"Summary: {checked} file(s) checked, {len(findings)} finding(s).")
+    print(
+        f"Summary: {checked} file(s) checked, {len(findings)} finding(s), "
+        f"{len(deferred)} deferred."
+    )
+    # Deferred notes are out-of-scope markers, not contract violations, so only
+    # hard findings fail the run.
     return 1 if findings else 0
 
 
