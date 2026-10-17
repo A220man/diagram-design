@@ -271,17 +271,33 @@ def check(path: Path) -> list[str]:
 
         # Check text-anchor="end" in RTL context.
         # Effective direction is per-element: direction="ltr" wins over the
-        # file-wide flag; direction="rtl" confirms RTL; otherwise the
-        # <svg>/<html> root direction is inherited. A file-level is_rtl flag
-        # must not reject a Latin label whose own direction="ltr" override
-        # makes text-anchor="end" correct for that element.
+        # file-wide flag; direction="rtl" confirms RTL; otherwise the inherited
+        # direction from ancestor <g>/<svg> elements is consulted (SVG inherits
+        # `direction` through the ancestor chain — a <g direction="ltr"> wrapper
+        # makes text-anchor="end" correct for an end-aligned Latin label),
+        # falling back to the root direction. A file-level is_rtl flag must not
+        # reject a Latin label whose inherited direction is "ltr".
+        # (Feedback PRRC_kwDOSEljpM78OM7l "Valid Latin labels fail": the previous
+        # check inspected only the <text>'s own attributes and missed direction
+        # set on a wrapping <g>.)
         attrs_lower = attrs.lower()
+        ancestor_attrs = ancestors.get(offset, [])
         if 'direction="ltr"' in attrs_lower:
             eff_rtl = False
         elif 'direction="rtl"' in attrs_lower:
             eff_rtl = True
         else:
             eff_rtl = root_rtl
+            # Walk ancestors innermost-first: the nearest ancestor that sets a
+            # direction shadows the root and any outer ancestors.
+            for g_attrs in reversed(ancestor_attrs):
+                g_lower = g_attrs.lower()
+                if 'direction="ltr"' in g_lower:
+                    eff_rtl = False
+                    break
+                if 'direction="rtl"' in g_lower:
+                    eff_rtl = True
+                    break
         if eff_rtl and 'text-anchor="end"' in attrs_lower:
             findings.append(
                 f"{path}: line {line}: RTL text uses text-anchor='end'; right-edge alignment "
@@ -289,8 +305,6 @@ def check(path: Path) -> list[str]:
             )
 
         if has_arabic_text:
-            ancestor_attrs = ancestors.get(offset, [])
-
             # Font-size floor (11px). Resolve through the <text>'s own attribute
             # first, then inherit from the nearest ancestor <g>/<svg>. A value
             # that cannot be attributed to the element (e.g. a CSS class rule)

@@ -58,6 +58,25 @@ LATIN_LTR_OVERRIDE_SVG = """<!DOCTYPE html>
 """
 
 
+LATIN_INHERITED_LTR_SVG = """<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<body>
+<svg viewBox="0 0 960 600" direction="rtl" role="img" aria-labelledby="t-title t-desc">
+  <title id="t-title">عنوان المخطح</title>
+  <desc id="t-desc">وصف المخطح باللغة العربية.</desc>
+  <rect width="100%" height="100%" fill="#f5f5f5"/>
+  <rect x="597" y="252" width="56" height="16" fill="#f5f5f5"/>
+  <rect x="660" y="236" width="220" height="88" fill="#ffffff" stroke="#4f5d75"/>
+  <text x="864" y="270" text-anchor="start" font-family="'Cairo', 'Noto Naskh Arabic', sans-serif" font-size="14">مكتب فني</text>
+  <g direction="ltr">
+    <text x="864" y="318" text-anchor="end" font-family="'Geist', sans-serif" font-size="12">English label</text>
+  </g>
+</svg>
+</body>
+</html>
+"""
+
+
 CHART_MARK_SVG = """<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <body>
@@ -264,6 +283,24 @@ def main() -> int:
     check_finding(
         "latin-no-override-in-rtl-still-flagged",
         LATIN_LTR_OVERRIDE_SVG.replace('direction="ltr"', ""),
+        "RTL text uses text-anchor='end'",
+    )
+
+    # 12b. A Latin label whose direction="ltr" is inherited from a wrapping <g>
+    # (not declared on the <text> itself) must NOT be flagged for
+    # text-anchor="end". SVG inherits direction through the ancestor chain, so a
+    # <g direction="ltr"> makes text-anchor="end" correct for an end-aligned
+    # Latin label even though the <text> element carries no direction attribute.
+    # (Feedback PRRC_kwDOSEljpM78OM7l "Valid Latin labels fail": the per-element
+    # check inspected only the <text>'s own attributes and missed direction set
+    # on a wrapping <g>.)
+    check_clean("latin-inherited-ltr-in-rtl-document", LATIN_INHERITED_LTR_SVG)
+
+    # A <g direction="rtl"> wrapper still makes text-anchor="end" wrong for the
+    # Latin label — the inherited RTL direction confirms the finding.
+    check_finding(
+        "latin-inherited-rtl-still-flagged",
+        LATIN_INHERITED_LTR_SVG.replace('direction="ltr"', 'direction="rtl"', 1),
         "RTL text uses text-anchor='end'",
     )
 
